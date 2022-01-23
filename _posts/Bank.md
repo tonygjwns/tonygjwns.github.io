@@ -1,0 +1,238 @@
+package bank;
+
+import bank.event.*;
+import security.*;
+import security.key.*;
+import java.util.Arrays;
+
+public class Bank {
+    private int numAccounts = 0;
+    final static int maxAccounts = 100;
+    private BankAccount[] accounts = new BankAccount[maxAccounts];
+    private String[] ids = new String[maxAccounts];
+
+    private BankAccount get_account(String id){
+        if(Arrays.asList(ids).indexOf(id)!=-1){
+        return accounts[Arrays.asList(ids).indexOf(id)];}
+        else {return null;}
+    }
+
+    public void createAccount(String id, String password) {
+        createAccount(id, password, 0);
+    }
+
+    public void createAccount(String id, String password, int initBalance) {
+        if(Arrays.asList(ids).contains(id)){
+        } else {
+            BankAccount new_account = new BankAccount(id, password, initBalance);
+            ids[numAccounts]=id;
+            accounts[numAccounts]=new_account;
+            this.numAccounts++;
+        }
+        //TODO: Problem 1.1
+    }
+
+
+    public boolean deposit(String id, String password, int amount) {
+        BankAccount temp_account = get_account(id);
+        if (temp_account!=null){
+        if(temp_account.authenticate(password)){
+            temp_account.deposit(amount);
+            return true;
+        } else {
+            return false;
+        }
+        } else{
+            return false;
+        }
+    }
+
+    public boolean withdraw(String id, String password, int amount) {
+        BankAccount temp_account = get_account(id);
+        if(temp_account!=null){
+        if (temp_account.authenticate(password)){
+            if(temp_account.withdraw(amount)){
+                return true;
+            } else {
+                return false;
+            }
+        } else{
+            return false;
+        }} else {
+            return false;
+        }
+
+    }
+
+    public boolean transfer(String sourceId, String password, String targetId, int amount) {
+        BankAccount from_account=get_account(sourceId);
+        BankAccount to_account=get_account(targetId);
+        if(from_account==null || to_account==null){
+            return false;
+        } else{
+            if(from_account.authenticate(password)){
+                if(from_account.send(amount)){
+                    to_account.receive(amount);
+                    return true;
+                }
+                return false;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    public Event[] getEvents(String id, String password) {
+        BankAccount temp_account=get_account(id);
+        if (temp_account != null){
+        if(temp_account.authenticate(password)){
+            return temp_account.get_event();
+        } else {
+            return null;
+        }}else {
+            return null;
+        }
+    }
+
+    public int getBalance(String id, String password) {
+        if(get_account(id)!=null){
+        if(get_account(id).authenticate(password)){
+            return get_account(id).getBalance();
+        } else{
+            return -1;
+        }} else {
+            return -1;
+        }
+    }
+
+    private static String randomUniqueStringGen(){
+        return Encryptor.randomUniqueStringGen();
+    }
+    private BankAccount find(String id) {
+        for (int i = 0; i < numAccounts; i++) {
+            if(ids[i].equals(id)){return accounts[i];}
+        }
+        return null;
+    }
+    final static int maxSessionKey = 100;
+    int numSessionKey = 0;
+    String[] sessionKeyArr = new String[maxSessionKey];
+    BankAccount[] bankAccountmap = new BankAccount[maxSessionKey];
+    String generateSessionKey(String id, String password){
+        BankAccount account = find(id);
+        if(account == null || !account.authenticate(password)){
+            return null;
+        }
+        String sessionkey = randomUniqueStringGen();
+        sessionKeyArr[numSessionKey] = sessionkey;
+        bankAccountmap[numSessionKey] = account;
+        numSessionKey += 1;
+        return sessionkey;
+    }
+    BankAccount getAccount(String sessionkey){
+        for(int i = 0 ;i < numSessionKey; i++){
+            if(sessionKeyArr[i] != null && sessionKeyArr[i].equals(sessionkey)){
+                return bankAccountmap[i];
+            }
+        }
+        return null;
+    }
+
+    boolean deposit(String sessionkey, int amount) {
+        BankAccount temp_account=getAccount(sessionkey);
+        temp_account.deposit(amount);
+        return true;
+    }
+
+    boolean withdraw(String sessionkey, int amount) {
+        BankAccount temp_account=getAccount(sessionkey);
+        Boolean deposited=temp_account.withdraw(amount);
+        return deposited;
+        //TODO: Problem 1.2
+    }
+
+    boolean transfer(String sessionkey, String targetId, int amount) {
+        BankAccount temp_account=getAccount(sessionkey);
+        BankAccount target_account=get_account(targetId);
+        if(target_account == null){
+            return false;
+        } else {
+            if(temp_account.send(amount)){
+                target_account.receive(amount);
+                return true;
+            } else{
+                return false;
+            }
+        }
+    }
+
+    private BankSecretKey secretKey;
+    public BankPublicKey getPublicKey(){
+        BankKeyPair keypair = Encryptor.publicKeyGen(); // generates two keys : BankPublicKey, BankSecretKey
+        secretKey = keypair.deckey; // stores BankSecretKey internally
+        return keypair.enckey;
+    }
+
+    int maxHandshakes = 10000;
+    int numSymmetrickeys = 0;
+    BankSymmetricKey[] bankSymmetricKeys = new BankSymmetricKey[maxHandshakes];
+    String[] AppIds = new String[maxHandshakes];
+    private BankSymmetricKey bankSymkey;
+
+    public int getAppIdIndex(String AppId){
+        for(int i=0; i<numSymmetrickeys; i++){
+            if(AppIds[i].equals(AppId)){
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public void fetchSymKey(Encrypted<BankSymmetricKey> encryptedKey, String AppId){
+        this.bankSymkey=encryptedKey.decrypt(this.secretKey);
+        int indexnum=getAppIdIndex(AppId);
+        if(this.bankSymkey==null){
+
+        }else {
+            if (encryptedKey == null) {
+            } else {
+                if (indexnum == -1) {
+                    bankSymmetricKeys[numSymmetrickeys] = this.bankSymkey;
+                    AppIds[numSymmetrickeys] = AppId;
+                    numSymmetrickeys++;
+                } else {
+                    bankSymmetricKeys[indexnum] = this.bankSymkey;
+                }
+            }
+        }
+    }
+
+    public Encrypted<Boolean> processRequest(Encrypted<Message> messageEnc, String AppId) {
+        int indexnum=getAppIdIndex(AppId);
+
+        if(indexnum==-1 || messageEnc==null){
+            return null;
+        } else{
+            if (messageEnc.decrypt(bankSymmetricKeys[indexnum])==null) {
+                return null;
+            } else {
+                Message mess=messageEnc.decrypt(bankSymmetricKeys[indexnum]);
+                String messreq=mess.getRequestType();
+                if (messreq.equals("deposit")){
+                    Boolean succ=deposit(mess.getId(),mess.getPassword(), mess.getAmount());
+                    Encrypted<Boolean> forreturn=new Encrypted(succ,bankSymmetricKeys[indexnum]);
+                    return forreturn;
+                } else if(messreq.equals("withdraw")){
+                    Boolean succ=withdraw(mess.getId(),mess.getPassword(),mess.getAmount());
+                    Encrypted<Boolean> forreturn=new Encrypted(succ,bankSymmetricKeys[indexnum]);
+                    return forreturn;
+                }
+
+
+            }
+            }
+        return null;
+
+        }
+
+}
